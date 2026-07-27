@@ -8,7 +8,7 @@
 	</listeners>
 
 	<test name="OpenCart Chrome Tests">
-		<parameter name="os" value="mac"/>
+		<parameter name="os" value="linux"/>
 		<parameter name="browser" value="chrome"/>
 		<classes>
 			<class name="testCases.TC001_AccountRegistrationTest"/>

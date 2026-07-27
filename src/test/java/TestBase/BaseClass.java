@@ -13,6 +13,8 @@ import java.util.Properties;
 import org.apache.commons.lang3.RandomStringUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.openqa.selenium.By;
+import org.openqa.selenium.Dimension;
 import org.openqa.selenium.OutputType;
 import org.openqa.selenium.Platform;
 import org.openqa.selenium.TakesScreenshot;
@@ -25,6 +27,8 @@ import org.openqa.selenium.firefox.FirefoxDriver;
 import org.openqa.selenium.firefox.FirefoxOptions;
 import org.openqa.selenium.remote.DesiredCapabilities;
 import org.openqa.selenium.remote.RemoteWebDriver;
+import org.openqa.selenium.support.ui.ExpectedConditions;
+import org.openqa.selenium.support.ui.WebDriverWait;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Parameters;
@@ -126,8 +130,17 @@ public class BaseClass {
 
 		driver.manage().deleteAllCookies();
 		driver.manage().timeouts().implicitlyWait(Duration.ofSeconds(10));
-		driver.get(p.getProperty("appURL1").trim());
-		driver.manage().window().maximize();
+		driver.manage().timeouts().pageLoadTimeout(Duration.ofSeconds(60));
+		// Headless maximize is unreliable; always force a large desktop viewport
+		driver.manage().window().setSize(new Dimension(1920, 1080));
+		String appUrl = p.getProperty("appURL1").trim();
+		driver.get(appUrl);
+
+		WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(30));
+		wait.until(ExpectedConditions.or(
+				ExpectedConditions.titleContains("Your Store"),
+				ExpectedConditions.presenceOfElementLocated(By.cssSelector("a[title='My Account']"))));
+		logger.info("Opened app URL: {} | title: {}", appUrl, driver.getTitle());
 	}
 
 	@AfterClass(groups = { "Sanity", "Regression", "Master", "Datadriven" }, alwaysRun = true)
