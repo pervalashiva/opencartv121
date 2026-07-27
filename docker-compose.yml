@@ -16,6 +16,9 @@ services:
     ports:
       - "8080:80"
     environment:
+      # Required: image only runs php cli_install.php when this is true
+      OC_INSTALL_NEW: "true"
+      OC_URL: http://localhost:8080
       OC_URL_HTTP: http://localhost:8080
       OC_URL_HTTPS: http://localhost:8080
       OC_DB_HOST: db
@@ -23,6 +26,9 @@ services:
       OC_DB_PASS: test
       OC_DB_NAME: oc
       OC_DB_PREFIX: oc_
+      OC_ADMIN_USER: admin
+      OC_ADMIN_PASS: admin123
+      OC_ADMIN_EMAIL: admin@example.com
     depends_on:
       db:
         condition: service_healthy
