@@ -1,4 +1,5 @@
-# Local OpenCart 3 for CI — tutorialsninja.com is Cloudflare-blocked on GitHub runners
+# Local OpenCart 3 for CI — tutorialsninja.com is Cloudflare-blocked on GitHub runners.
+# Custom command: wait for DB, run CLI install, then start Apache (image entrypoint is fragile).
 services:
   db:
     image: mariadb:10.11
@@ -16,8 +17,6 @@ services:
     ports:
       - "8080:80"
     environment:
-      # Required: image only runs php cli_install.php when this is true
-      OC_INSTALL_NEW: "true"
       OC_URL: http://localhost:8080
       OC_URL_HTTP: http://localhost:8080
       OC_URL_HTTPS: http://localhost:8080
@@ -32,3 +31,58 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        set -eux
+        if [ ! -f /var/www/html/index.php ]; then
+          echo "Copying OpenCart files from /oc ..."
+          cp -Rp /oc/. /var/www/html/
+        fi
+
+        echo "Waiting for MariaDB..."
+        for i in $$(seq 1 60); do
+          if php -r '$$m=@new mysqli(getenv("OC_DB_HOST"),getenv("OC_DB_USER"),getenv("OC_DB_PASS"),getenv("OC_DB_NAME")); exit(($$m && !$$m->connect_error)?0:1);'; then
+            echo "Database is ready"
+            break
+          fi
+          sleep 2
+        done
+
+        # Ensure PHP can see Docker env vars via $_ENV / getenv
+        mkdir -p /usr/local/etc/php/conf.d /etc/apache2/conf-enabled
+        printf '%s\n' 'variables_order = "EGPCS"' > /usr/local/etc/php/conf.d/zz-env.ini
+        printf '%s\n' 'PassEnv OC_URL_HTTP OC_URL_HTTPS OC_DB_HOST OC_DB_USER OC_DB_PASS OC_DB_NAME OC_DB_PREFIX' \
+          > /etc/apache2/conf-enabled/zz-passenv.conf || true
+
+        if [ -f /var/www/html/install/cli_install.php ]; then
+          echo "Running OpenCart CLI install..."
+          set +e
+          ( cd /var/www/html/install && php cli_install.php install \
+              --db_hostname "$$OC_DB_HOST" \
+              --db_username "$$OC_DB_USER" \
+              --db_password "$$OC_DB_PASS" \
+              --db_database "$$OC_DB_NAME" \
+              --db_driver mysqli \
+              --db_prefix "$$OC_DB_PREFIX" \
+              --username "$$OC_ADMIN_USER" \
+              --password "$$OC_ADMIN_PASS" \
+              --email "$$OC_ADMIN_EMAIL" \
+              --http_server "http://localhost:8080/" )
+          echo "CLI install exit code: $$?"
+          set -e
+          rm -rf /var/www/html/install
+        else
+          echo "Install directory missing; assuming already installed"
+        fi
+
+        # If CLI install did not write usable config, fall back to env-based config from image
+        if ! grep -q "DB_HOSTNAME" /var/www/html/config.php 2>/dev/null; then
+          echo "Restoring env-based config.php"
+          cp -f /oc/config.php /var/www/html/config.php || true
+          cp -f /oc/admin/config.php /var/www/html/admin/config.php || true
+        fi
+
+        chown -R www-data:www-data /var/www/html /storage || true
+        echo "Starting Apache..."
+        exec docker-php-entrypoint apache2-foreground
