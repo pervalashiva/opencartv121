@@ -10,59 +10,58 @@ import pageObjects.MyAccountPage;
 import utilities.DataProviders;
 
 /*
- *  Data is valid - login success-test pass -logout 
-   				login failed - test fail
-   
-   Data is invalid - login success - test fail - logout
-   				login failed - test pass
- 
-  
-  
+ *  Data is valid - login success-test pass -logout
+ *               login failed - test fail
+ *
+ *  Data is invalid - login success - test fail - logout
+ *                 login failed - test pass
  */
 
-public class TC003_LoginDDT extends  BaseClass {
-	
-	@Test(dataProvider="LoginData", dataProviderClass= DataProviders.class, groups="Datadriven")
+public class TC003_LoginDDT extends BaseClass {
+
+	@Test(dataProvider = "LoginData", dataProviderClass = DataProviders.class, groups = { "Datadriven", "Master" })
 	public void verivy_loginDDT(String email, String pwd, String exp) {
 		logger.info("******* Starting TC003_LoginDDT *********");
-		
-		if (email == null || pwd == null || exp == null) {
-		    logger.warn("Skipping test case: one or more input values are null. [email=" + email + ", pwd=" + pwd + ", exp=" + exp + "]");
-		    Assert.fail("Test data contains null values.");
-		    return;
+
+		if (email == null || pwd == null || exp == null || email.isBlank() || pwd.isBlank() || exp.isBlank()) {
+			logger.warn("Skipping test case: one or more input values are blank. [email=" + email + ", pwd=" + pwd
+					+ ", exp=" + exp + "]");
+			Assert.fail("Test data contains blank values.");
+			return;
 		}
 
-
 		try {
-			// Home Page
+			// Reset to home so each Excel row starts from a clean entry point
+			driver.get(p.getProperty("appURL1").trim());
+
 			HomePage hp = new HomePage(driver);
 			hp.clickMyAccount();
 			hp.clickLogin();
 
-			// Login Page
 			LoginPage lp = new LoginPage(driver);
-			lp.setEmail(email);      //  Use direct values
-			lp.setPassword(pwd);     //  Use direct values
+			lp.setEmail(email.trim());
+			lp.setPassword(pwd.trim());
 			lp.clickLogin();
 
-			// MyAccount
 			MyAccountPage macc = new MyAccountPage(driver);
 			boolean targetPage = macc.isMyAccountPageExists();
 
-			if (exp.equalsIgnoreCase("Valid")) {
+			if (exp.trim().equalsIgnoreCase("Valid")) {
 				if (targetPage) {
 					macc.clickLogout();
 					Assert.assertTrue(true, "Login succeeded as expected");
 				} else {
-					Assert.fail("Login failed, but expected success");
+					Assert.fail("Login failed, but expected success for: " + email);
 				}
-			} else if (exp.equalsIgnoreCase("Invalid")) {
+			} else if (exp.trim().equalsIgnoreCase("Invalid")) {
 				if (targetPage) {
 					macc.clickLogout();
-					Assert.fail("Login succeeded, but expected failure");
+					Assert.fail("Login succeeded, but expected failure for: " + email);
 				} else {
 					Assert.assertTrue(true, "Login failed as expected");
 				}
+			} else {
+				Assert.fail("Unexpected expected-result value in Excel: " + exp);
 			}
 		} catch (Exception e) {
 			e.printStackTrace();
@@ -71,6 +70,4 @@ public class TC003_LoginDDT extends  BaseClass {
 
 		logger.info("******* Finished TC003_LoginDDT *********");
 	}
-
-
 }

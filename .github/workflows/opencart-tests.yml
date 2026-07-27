@@ -1,0 +1,109 @@
+name: OpenCart Tests
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+    inputs:
+      suite:
+        description: 'TestNG suite to run'
+        required: true
+        default: 'master'
+        type: choice
+        options:
+          - master
+          - grouping
+          - cross-browser
+      headed:
+        description: 'Run headed (visible browser)'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  test:
+    name: Run OpenCart (${{ github.event.inputs.suite || 'master' }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 11
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '11'
+          cache: maven
+
+      - name: Install Google Chrome
+        run: |
+          wget -q -O /tmp/linux_signing_key.pub https://dl.google.com/linux/linux_signing_key.pub
+          sudo gpg --batch --yes --dearmor -o /usr/share/keyrings/google-chrome.gpg /tmp/linux_signing_key.pub
+          echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome.gpg] http://dl.google.com/linux/chrome/deb/ stable main" | sudo tee /etc/apt/sources.list.d/google-chrome.list
+          sudo apt-get update
+          sudo apt-get install -y google-chrome-stable
+          google-chrome --version
+
+      - name: Resolve suite and headless
+        id: resolve
+        shell: bash
+        run: |
+          SUITE="${{ github.event.inputs.suite || 'master' }}"
+          case "$SUITE" in
+            master) XML=master.xml ;;
+            grouping) XML=grouping.xml ;;
+            cross-browser) XML=CrossBrowserTesting.xml ;;
+            *) echo "Unknown suite: $SUITE"; exit 1 ;;
+          esac
+
+          HEADLESS=true
+          if [ "${{ github.event.inputs.headed }}" = "true" ]; then
+            HEADLESS=false
+          fi
+
+          echo "suite=$SUITE" >> "$GITHUB_OUTPUT"
+          echo "xml=$XML" >> "$GITHUB_OUTPUT"
+          echo "HEADLESS=$HEADLESS" >> "$GITHUB_ENV"
+          echo "Running suite file: $XML (HEADLESS=$HEADLESS)"
+
+      - name: Run tests
+        id: tests
+        continue-on-error: true
+        run: mvn -B test -Dsurefire.suiteXmlFiles=${{ steps.resolve.outputs.xml }}
+
+      - name: Upload Surefire reports
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-reports-${{ steps.resolve.outputs.suite }}-${{ github.run_id }}
+          path: target/surefire-reports/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload Extent reports
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: extent-reports-${{ steps.resolve.outputs.suite }}-${{ github.run_id }}
+          path: reports/
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Upload screenshots
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots-${{ steps.resolve.outputs.suite }}-${{ github.run_id }}
+          path: screenshots/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Fail job if tests failed
+        if: ${{ steps.tests.outcome == 'failure' }}
+        run: |
+          echo "Tests failed. Reports were still uploaded as artifacts."
+          exit 1
