@@ -1,88 +1,16 @@
-# Local OpenCart 3 for CI — tutorialsninja.com is Cloudflare-blocked on GitHub runners.
-# Custom command: wait for DB, run CLI install, then start Apache (image entrypoint is fragile).
+# Optional local helper only.
+# GitHub Actions uses scripts/ci-start-opencart.sh (official OpenCart zip + MySQL service)
+# because third-party OpenCart images were unreliable in CI.
 services:
   db:
-    image: mariadb:10.11
+    image: mysql:5.7
+    ports:
+      - "3306:3306"
     environment:
-      MYSQL_ROOT_PASSWORD: test
-      MYSQL_DATABASE: oc
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: opencart
     healthcheck:
-      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-proot", "--silent"]
       interval: 5s
       timeout: 5s
       retries: 30
-
-  opencart:
-    image: danelsan/opencart:3.0.4.0
-    ports:
-      - "8080:80"
-    environment:
-      OC_URL: http://localhost:8080
-      OC_URL_HTTP: http://localhost:8080
-      OC_URL_HTTPS: http://localhost:8080
-      OC_DB_HOST: db
-      OC_DB_USER: root
-      OC_DB_PASS: test
-      OC_DB_NAME: oc
-      OC_DB_PREFIX: oc_
-      OC_ADMIN_USER: admin
-      OC_ADMIN_PASS: admin123
-      OC_ADMIN_EMAIL: admin@example.com
-    depends_on:
-      db:
-        condition: service_healthy
-    entrypoint: ["/bin/bash", "-c"]
-    command:
-      - |
-        set -eux
-        if [ ! -f /var/www/html/index.php ]; then
-          echo "Copying OpenCart files from /oc ..."
-          cp -Rp /oc/. /var/www/html/
-        fi
-
-        echo "Waiting for MariaDB..."
-        for i in $$(seq 1 60); do
-          if php -r '$$m=@new mysqli(getenv("OC_DB_HOST"),getenv("OC_DB_USER"),getenv("OC_DB_PASS"),getenv("OC_DB_NAME")); exit(($$m && !$$m->connect_error)?0:1);'; then
-            echo "Database is ready"
-            break
-          fi
-          sleep 2
-        done
-
-        # Ensure PHP can see Docker env vars via $_ENV / getenv
-        mkdir -p /usr/local/etc/php/conf.d /etc/apache2/conf-enabled
-        printf '%s\n' 'variables_order = "EGPCS"' > /usr/local/etc/php/conf.d/zz-env.ini
-        printf '%s\n' 'PassEnv OC_URL_HTTP OC_URL_HTTPS OC_DB_HOST OC_DB_USER OC_DB_PASS OC_DB_NAME OC_DB_PREFIX' \
-          > /etc/apache2/conf-enabled/zz-passenv.conf || true
-
-        if [ -f /var/www/html/install/cli_install.php ]; then
-          echo "Running OpenCart CLI install..."
-          set +e
-          ( cd /var/www/html/install && php cli_install.php install \
-              --db_hostname "$$OC_DB_HOST" \
-              --db_username "$$OC_DB_USER" \
-              --db_password "$$OC_DB_PASS" \
-              --db_database "$$OC_DB_NAME" \
-              --db_driver mysqli \
-              --db_prefix "$$OC_DB_PREFIX" \
-              --username "$$OC_ADMIN_USER" \
-              --password "$$OC_ADMIN_PASS" \
-              --email "$$OC_ADMIN_EMAIL" \
-              --http_server "http://localhost:8080/" )
-          echo "CLI install exit code: $$?"
-          set -e
-          rm -rf /var/www/html/install
-        else
-          echo "Install directory missing; assuming already installed"
-        fi
-
-        # If CLI install did not write usable config, fall back to env-based config from image
-        if ! grep -q "DB_HOSTNAME" /var/www/html/config.php 2>/dev/null; then
-          echo "Restoring env-based config.php"
-          cp -f /oc/config.php /var/www/html/config.php || true
-          cp -f /oc/admin/config.php /var/www/html/admin/config.php || true
-        fi
-
-        chown -R www-data:www-data /var/www/html /storage || true
-        echo "Starting Apache..."
-        exec docker-php-entrypoint apache2-foreground
