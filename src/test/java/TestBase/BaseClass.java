@@ -27,7 +27,6 @@ import org.openqa.selenium.firefox.FirefoxDriver;
 import org.openqa.selenium.firefox.FirefoxOptions;
 import org.openqa.selenium.remote.DesiredCapabilities;
 import org.openqa.selenium.remote.RemoteWebDriver;
-import org.openqa.selenium.support.ui.ExpectedConditions;
 import org.openqa.selenium.support.ui.WebDriverWait;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
@@ -46,6 +45,15 @@ public class BaseClass {
 		FileReader file = new FileReader("./src/test/resources/config.properties");
 		p = new Properties();
 		p.load(file);
+
+		// CI / local overrides (Docker OpenCart, seeded credentials)
+		overrideFromEnv(p, "email", "TEST_EMAIL");
+		overrideFromEnv(p, "password", "TEST_PASSWORD");
+		if (System.getenv("APP_URL") != null && !System.getenv("APP_URL").isBlank()) {
+			p.setProperty("appURL1", System.getenv("APP_URL").trim());
+		} else if (System.getProperty("APP_URL") != null && !System.getProperty("APP_URL").isBlank()) {
+			p.setProperty("appURL1", System.getProperty("APP_URL").trim());
+		}
 
 		logger = LogManager.getLogger(this.getClass()); // log4j
 
@@ -136,11 +144,32 @@ public class BaseClass {
 		String appUrl = p.getProperty("appURL1").trim();
 		driver.get(appUrl);
 
-		WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(30));
-		wait.until(ExpectedConditions.or(
-				ExpectedConditions.titleContains("Your Store"),
-				ExpectedConditions.presenceOfElementLocated(By.cssSelector("a[title='My Account']"))));
+		WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(45));
+		try {
+			wait.until(d -> {
+				String title = d.getTitle() == null ? "" : d.getTitle();
+				if (title.contains("One moment") || title.toLowerCase().contains("just a moment")) {
+					return false;
+				}
+				return !d.findElements(By.cssSelector("a[title='My Account']")).isEmpty()
+						|| title.contains("Your Store");
+			});
+		} catch (Exception e) {
+			String title = driver.getTitle();
+			throw new IllegalStateException(
+					"Storefront did not load from " + appUrl + " (title='" + title
+							+ "'). If you see a Cloudflare / bot check, run against local Docker OpenCart "
+							+ "(APP_URL=http://localhost:8080/) instead of tutorialsninja.com in CI.",
+					e);
+		}
 		logger.info("Opened app URL: {} | title: {}", appUrl, driver.getTitle());
+	}
+
+	private static void overrideFromEnv(Properties props, String propKey, String envKey) {
+		String value = System.getenv(envKey);
+		if (value != null && !value.isBlank()) {
+			props.setProperty(propKey, value.trim());
+		}
 	}
 
 	@AfterClass(groups = { "Sanity", "Regression", "Master", "Datadriven" }, alwaysRun = true)

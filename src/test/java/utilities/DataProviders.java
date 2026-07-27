@@ -18,9 +18,19 @@ public class DataProviders {
 		int totalcols = xlutil.getCellCount("Sheet1", 1);
 		String[][] logindata = new String[totalrows][totalcols];
 
+		String ciEmail = System.getenv("TEST_EMAIL");
+		String ciPassword = System.getenv("TEST_PASSWORD");
+
 		for (int i = 1; i <= totalrows; i++) {
 			for (int j = 0; j < totalcols; j++) {
 				logindata[i - 1][j] = xlutil.getCellData("Sheet1", i, j);
+			}
+			// In CI Docker, Valid rows must use the seeded customer credentials
+			if (ciEmail != null && !ciEmail.isBlank() && ciPassword != null && !ciPassword.isBlank()
+					&& logindata[i - 1].length >= 3
+					&& "Valid".equalsIgnoreCase(logindata[i - 1][2] == null ? "" : logindata[i - 1][2].trim())) {
+				logindata[i - 1][0] = ciEmail.trim();
+				logindata[i - 1][1] = ciPassword.trim();
 			}
 		}
 		return logindata;

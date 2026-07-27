@@ -1,0 +1,28 @@
+# Local OpenCart 3 for CI — tutorialsninja.com is Cloudflare-blocked on GitHub runners
+services:
+  db:
+    image: mariadb:10.11
+    environment:
+      MYSQL_ROOT_PASSWORD: test
+      MYSQL_DATABASE: oc
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  opencart:
+    image: danelsan/opencart:3.0.4.0
+    ports:
+      - "8080:80"
+    environment:
+      OC_URL_HTTP: http://localhost:8080
+      OC_URL_HTTPS: http://localhost:8080
+      OC_DB_HOST: db
+      OC_DB_USER: root
+      OC_DB_PASS: test
+      OC_DB_NAME: oc
+      OC_DB_PREFIX: oc_
+    depends_on:
+      db:
+        condition: service_healthy
